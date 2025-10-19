@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Matrix Effect</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #ffeef8, #f8e8ff, #fff0f5, #f0e6ff);
+            color: #d63384;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        .container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, 
+                rgba(255, 240, 245, 0.9), 
+                rgba(248, 232, 255, 0.9), 
+                rgba(255, 238, 248, 0.9), 
+                rgba(240, 230, 255, 0.9));
+            backdrop-filter: blur(1px);
+        }
+        
+        #matrixCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        
+        #textCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+        }
+        
+        #fireworks-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 4;
+            pointer-events: none;
+        }
+        
+        .banner {
+            position: absolute;
+            top: -17vh;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 5;
+            width: 300px;
+            height: auto;
+        }
+        
+        @keyframes fadeInHint {
+            0% { opacity: 0; }
+            50% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+        
+        /* Desktop - màn hình lớn */
+        @media (min-width: 1024px) {
+            .banner {
+                top: -10vh;
+            }
+        }
+        
+        /* Tablet/Mobile xoay ngang - màn hình nhỏ hơn */
+        @media (max-width: 1023px) {
+            .banner {
+                top: -17vh;
+            }
+        }
+        
+        
+        
+    </style>
+</head>
+<body>
+    <!-- Banner -->
+    <img src="/assets/banner.png" alt="Banner" class="banner">
+    
+    
+    <div class="container">
+        <canvas id="matrixCanvas"></canvas>
+        <canvas id="textCanvas"></canvas>
+        <canvas id="fireworks-canvas"></canvas>
+    </div>
+
+    <script>
+        // ============================================================================
+        // MY MATRIX EFFECT CLASS
+        // ============================================================================
+        
+        class MyMatrixEffect {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.isRunning = false;
+                this.animationId = null;
+                this.startTime = 0;
+                
+                // Effect settings
+                this.settings = {
+                    speed: 1.8, // Tốc độ vừa phải
+                    density: 0.8,
+                    brightness: 0.8,
+                    fontSize: 18,
+                    columns: [],
+                    chars: '01ABCDEFGHIJKLMNOPQRSTUVWXYZ' // Ký tự Matrix thông thường
+                };
+                
+                this.init();
+            }
+            
+            init() {
+                this.setupCanvas();
+                this.setupColumns();
+                this.setupEventListeners();
+            }
+            
+            setupCanvas() {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+                
+                window.addEventListener('resize', () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                    this.setupColumns();
+                });
+            }
+            
+            setupColumns() {
+                this.settings.columns = [];
+                const numColumns = Math.floor(this.canvas.width / this.settings.fontSize);
+                
+                for (let i = 0; i < numColumns; i++) {
+                    this.settings.columns.push({
+                        x: i * this.settings.fontSize,
+                        y: Math.random() * this.canvas.height,
+                        speed: Math.random() * 2.5 + 1.5, // Tốc độ vừa phải
+                        chars: [],
+                        nextChar: Math.random() * 50,
+                        opacity: Math.random() * 0.5 + 0.5
+                    });
+                }
+            }
+            
+            setupEventListeners() {
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    switch(e.key) {
+                        case ' ':
+                            e.preventDefault();
+                            this.toggle();
+                            break;
+                        case 'f':
+                        case 'F':
+                            this.toggleFullscreen();
+                            break;
+                        case 'Escape':
+                            if (document.fullscreenElement) {
+                                document.exitFullscreen();
+                            }
+                            break;
+                        case 'Enter':
+                            // Cho phép chuyển sang trang flower ngay lập tức
+                            e.preventDefault();
+                            console.log('🎉 Manual redirect to flower page...');
+                            document.body.style.transition = 'opacity 1s ease-out';
+                            document.body.style.opacity = '0';
+                            setTimeout(function() {
+                                // Đánh dấu rằng đây là auto redirect hợp lệ từ matrix
+                                sessionStorage.setItem('matrixRedirect', 'true');
+                                window.location.href = 'flower.html';
+                            }, 1000);
+                            break;
+                    }
+                });
+            }
+            
+            start() {
+                if (this.isRunning) return;
+                
+                this.isRunning = true;
+                this.startTime = performance.now();
+                this.animate();
+            }
+            
+            stop() {
+                this.isRunning = false;
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                    this.animationId = null;
+                }
+            }
+            
+            toggle() {
+                if (this.isRunning) {
+                    this.stop();
+                } else {
+                    this.start();
+                }
+            }
+            
+            animate() {
+                if (!this.isRunning) return;
+                
+                this.update();
+                this.draw();
+                this.drawHeartsClean(); // Vẽ trái tim/lá thư sau khi vẽ matrix
+                this.animationId = requestAnimationFrame(() => this.animate());
+            }
+            
+            update() {
+                const time = (performance.now() - this.startTime) / 1000;
+                
+                this.settings.columns.forEach(column => {
+                    // Update column position
+                    column.y += column.speed * this.settings.speed;
+                    
+                    // Add new characters - tạo ký tự mới thường xuyên hơn
+                    if (column.nextChar <= 0) {
+                        column.chars.unshift({
+                            char: this.settings.chars[Math.floor(Math.random() * this.settings.chars.length)],
+                            age: 0,
+                            brightness: 1,
+                            color: this.getRandomColor()
+                        });
+                        column.nextChar = Math.random() * 10 + 3; // Giảm khoảng cách giữa các ký tự hơn nữa
+                    } else {
+                        column.nextChar--;
+                    }
+                    
+                    // Update characters - ký tự sống lâu hơn
+                    column.chars.forEach((char, index) => {
+                        char.age++;
+                        char.brightness = Math.max(0, 1 - (char.age / 120)); // Tăng lên 120 để ký tự sống lâu hơn nữa
+                        
+                        // Randomly change character
+                        if (Math.random() < 0.15) {
+                            char.char = this.settings.chars[Math.floor(Math.random() * this.settings.chars.length)];
+                        }
+                    });
+                    
+                    // Remove old characters
+                    column.chars = column.chars.filter(char => char.brightness > 0);
+                    
+                    // Reset column if it goes off screen - reset xa hơn để cột dài hơn
+                    if (column.y > this.canvas.height + 300) {
+                        column.y = -300; // Bắt đầu từ xa hơn nữa
+                        column.chars = [];
+                        column.opacity = Math.random() * 0.5 + 0.5;
+                    }
+                });
+                
+                // Cập nhật trái tim
+                if (this.updateHearts) {
+                    this.updateHearts();
+                }
+                
+                // Cập nhật icon top
+                if (this.updateTopIcons) {
+                    this.updateTopIcons();
+                }
+            }
+            
+            draw() {
+                // Clear canvas với fade effect - sử dụng màu trắng nhạt cho background sáng
+                this.ctx.fillStyle = `rgba(255, 240, 245, ${0.08 * this.settings.brightness})`;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Set font
+                this.ctx.font = `${this.settings.fontSize}px 'Courier New', monospace`;
+                this.ctx.textAlign = 'center';
+                
+                // Draw columns
+                this.settings.columns.forEach((column, columnIndex) => {
+                    column.chars.forEach((char, index) => {
+                        const alpha = char.brightness * this.settings.brightness * column.opacity;
+                        
+                        // Xen kẽ màu hồng đậm và hồng nhạt theo cột
+                        let color;
+                        if (columnIndex % 2 === 0) {
+                            color = { r: 220, g: 38, b: 127 }; // Hồng đậm (Rose Pink)
+                        } else {
+                            color = { r: 255, g:182, b: 193 }; // Hồng nhạt (Light Pink)
+                        }
+                        
+                        const colorStr = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
+                        
+                        this.ctx.fillStyle = colorStr;
+                        this.ctx.fillText(
+                            char.char,
+                            column.x + this.settings.fontSize / 2,
+                            column.y - index * this.settings.fontSize
+                        );
+                    });
+                });
+            }
+            
+            // Vẽ trái tim/lá thư riêng biệt để không bị trail
+            drawHeartsClean() {
+                if (this.drawHearts) {
+                    this.drawHearts();
+                }
+                if (this.drawTopIcons) {
+                    this.drawTopIcons();
+                }
+            }
+            
+            getRandomColor() {
+                const colors = [
+                    { r: 220, g: 38, b: 127 },   // Hồng đậm (Rose Pink)
+                    { r: 255, g: 182, b: 193 },  // Hồng nhạt (Light Pink)
+                    { r: 255, g: 20, b: 147 },   // Hồng đậm (Deep Pink)
+                    { r: 255, g:192, b: 203 },     // Hồng nhạt (Pink)
+                    { r: 255, g: 105, b: 180 },  // Hồng đậm (Hot Pink)
+                    { r: 255, g: 218, b: 185 },  // Hồng nhạt (Peach Puff)
+                ];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+            
+            hslToRgb(h, s, l) {
+                h /= 360;
+                s /= 100;
+                l /= 100;
+                
+                const c = (1 - Math.abs(2 * l - 1)) * s;
+                const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+                const m = l - c / 2;
+                
+                let r, g, b;
+                
+                if (h < 1/6) {
+                    r = c; g = x; b = 0;
+                } else if (h < 2/6) {
+                    r = x; g = c; b = 0;
+                } else if (h < 3/6) {
+                    r = 0; g = c; b = x;
+                } else if (h < 4/6) {
+                    r = 0; g = x; b = c;
+                } else if (h < 5/6) {
+                    r = x; g = 0; b = c;
+                } else {
+                    r = c; g = 0; b = x;
+                }
+                
+                return {
+                    r: Math.round((r + m) * 255),
+                    g: Math.round((g + m) * 255),
+                    b: Math.round((b + m) * 255)
+                };
+            }
+            
+            updateSettings(newSettings) {
+                this.settings = { ...this.settings, ...newSettings };
+                if (newSettings.density !== undefined) {
+                    this.setupColumns();
+                }
+            }
+            
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+        }
+        
+        // ============================================================================
+        // GLOBAL VARIABLES AND FUNCTIONS
+        // ============================================================================
+        
+        let matrixEffect = null;
+        
+        // Get elements
+        const canvas = document.getElementById('matrixCanvas');
+        
+        // Initialize and start immediately
+        matrixEffect = new MyMatrixEffect(canvas);
+        matrixEffect.start();
+        
+        // Thêm hiệu ứng trái tim và lá thư vào matrix effect
+        matrixEffect.hearts = [];
+        matrixEffect.icons = ['❤️', '💌']; // Trái tim và lá thư
+        
+        // Thêm icon trang trí ở top
+        matrixEffect.topIcons = [];
+        matrixEffect.topIconTypes = ['✨', '💫', '🌟', '⭐', '💖', '🌸', '🌺', '🌷'];
+        
+        // Tạo icon mới (trái tim hoặc lá thư)
+        matrixEffect.createHeart = function() {
+            const heart = {
+                x: Math.random() * this.canvas.width,
+                y: this.canvas.height + 20,
+                vx: (Math.random() - 0.5) * 0.5, // Chuyển động ngang nhiều hơn
+                vy: -Math.random() * 1.5 - 0.8, // Bay lên nhanh hơn
+                size: Math.random() * 8 + 8, // Thu nhỏ icon
+                life: 1.0,
+                decay: Math.random() * 0.002 + 0.001,
+                icon: this.icons[Math.floor(Math.random() * this.icons.length)] // Random giữa trái tim và lá thư
+            };
+            this.hearts.push(heart);
+        };
+        
+        // Tạo icon trang trí ở top
+        matrixEffect.createTopIcon = function() {
+            const topIcon = {
+                x: Math.random() * this.canvas.width,
+                y: Math.random() * 100 + 20, // Ở phần trên đầu
+                vx: (Math.random() - 0.5) * 0.3, // Chuyển động ngang nhẹ
+                vy: (Math.random() - 0.5) * 0.3, // Chuyển động dọc nhẹ
+                size: Math.random() * 12 + 10, // Kích thước vừa phải
+                life: 1.0,
+                decay: Math.random() * 0.001 + 0.0005, // Sống lâu hơn
+                pulse: Math.random() * Math.PI * 2,
+                pulseSpeed: Math.random() * 0.03 + 0.01,
+                icon: this.topIconTypes[Math.floor(Math.random() * this.topIconTypes.length)]
+            };
+            this.topIcons.push(topIcon);
+        };
+        
+        // Cập nhật trái tim
+        matrixEffect.updateHearts = function() {
+            for (let i = this.hearts.length - 1; i >= 0; i--) {
+                const heart = this.hearts[i];
+                
+                // Cập nhật vị trí - bay basic đơn giản
+                heart.x += heart.vx;
+                heart.y += heart.vy;
+                
+                // Giảm life
+                heart.life -= heart.decay;
+                
+                // Xóa trái tim khi hết life hoặc ra khỏi màn hình
+                if (heart.life <= 0 || heart.y < -50) {
+                    this.hearts.splice(i, 1);
+                }
+            }
+            
+            // Tạo trái tim mới ngẫu nhiên - nhiều hơn
+            if (Math.random() < 0.02 && this.hearts.length < 12) {
+                this.createHeart();
+            }
+        };
+        
+        // Cập nhật icon top
+        matrixEffect.updateTopIcons = function() {
+            for (let i = this.topIcons.length - 1; i >= 0; i--) {
+                const topIcon = this.topIcons[i];
+                
+                // Cập nhật vị trí - lơ lửng nhẹ
+                topIcon.x += topIcon.vx;
+                topIcon.y += topIcon.vy;
+                
+                // Cập nhật pulse
+                topIcon.pulse += topIcon.pulseSpeed;
+                
+                // Giảm life
+                topIcon.life -= topIcon.decay;
+                
+                // Xóa icon khi hết life
+                if (topIcon.life <= 0) {
+                    this.topIcons.splice(i, 1);
+                }
+            }
+            
+            // Tạo icon top mới ngẫu nhiên
+            if (Math.random() < 0.01 && this.topIcons.length < 8) {
+                this.createTopIcon();
+            }
+        };
+        
+        // Vẽ icon (trái tim và lá thư)
+        matrixEffect.drawHearts = function() {
+            this.hearts.forEach(heart => {
+                const alpha = heart.life;
+                const size = heart.size;
+                
+                // Vẽ icon basic - màu hồng đậm, sáng rõ
+                this.ctx.font = `${size}px Arial, sans-serif`;
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillStyle = `rgba(220, 38, 127, ${alpha * 1.2})`; // Tăng độ sáng
+                this.ctx.fillText(heart.icon, heart.x, heart.y);
+            });
+        };
+        
+        // Vẽ icon top
+        matrixEffect.drawTopIcons = function() {
+            this.topIcons.forEach(topIcon => {
+                const alpha = topIcon.life;
+                const size = topIcon.size;
+                const pulseScale = 1 + Math.sin(topIcon.pulse) * 0.1;
+                
+                // Vẽ icon top với hiệu ứng pulse nhẹ
+                this.ctx.font = `${size * pulseScale}px Arial, sans-serif`;
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillStyle = `rgba(255, 182, 193, ${alpha})`; // Màu hồng nhạt
+                this.ctx.fillText(topIcon.icon, topIcon.x, topIcon.y);
+            });
+        };
+    </script>
+
+    <!-- Text Animation Script -->
+    <script>
+        /**
+         * Text Animation Effect - Hiệu ứng chữ ghép lại
+         * Tạo hiệu ứng các chấm tròn ghép lại thành chữ cái
+         */
+
+        class TextAnimation {
+            constructor(canvasSelector, options = {}) {
+                this.canvas = document.querySelector(canvasSelector);
+                this.context = this.canvas.getContext('2d');
+                this.options = {
+                    gap: 4,
+                    fontSize: 500,
+                    fontFamily: 'Avenir, Helvetica Neue, Helvetica, Arial, sans-serif',
+                    dotColor: { r: 220, g: 38, b: 127, a: 1 }, // Màu hồng đậm
+                    animationSpeed: 0.14,
+                    dotSize: 2,
+                    ...options
+                };
+                
+                this.dots = [];
+                this.width = 0;
+                this.height = 0;
+                this.cx = 0;
+                this.cy = 0;
+                this.sequence = [];
+                this.currentAction = null;
+                this.interval = null;
+                
+                this.init();
+            }
+
+            init() {
+                this.adjustCanvas();
+                this.setupEventListeners();
+                this.startRenderLoop();
+            }
+
+            adjustCanvas() {
+                this.canvas.width = window.innerWidth - 100;
+                this.canvas.height = window.innerHeight - 30;
+            }
+
+            setupEventListeners() {
+                window.addEventListener('resize', () => {
+                    this.adjustCanvas();
+                });
+            }
+
+            startRenderLoop() {
+                const requestFrame = window.requestAnimationFrame ||
+                    window.webkitRequestAnimationFrame ||
+                    window.mozRequestAnimationFrame ||
+                    window.oRequestAnimationFrame ||
+                    window.msRequestAnimationFrame ||
+                    function(callback) {
+                        window.setTimeout(callback, 1000 / 60);
+                    };
+
+                const loop = () => {
+                    this.clearFrame();
+                    this.render();
+                    requestFrame.call(window, loop);
+                };
+
+                loop();
+            }
+
+            clearFrame() {
+                this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+
+            drawCircle(point, color) {
+                this.context.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
+                this.context.beginPath();
+                this.context.arc(point.x, point.y, point.z, 0, 2 * Math.PI, true);
+                this.context.closePath();
+                this.context.fill();
+            }
+
+            createDot(x, y) {
+                return {
+                    p: {
+                        x: x,
+                        y: y,
+                        z: this.options.dotSize,
+                        a: 1,
+                        h: 0
+                    },
+                    e: 0.07,
+                    s: true,
+                    c: { ...this.options.dotColor, a: 1 },
+                    t: { x: x, y: y, z: this.options.dotSize, a: 1, h: 0 },
+                    q: [],
+                    
+                    clone: function() {
+                        return {
+                            x: this.p.x,
+                            y: this.p.y,
+                            z: this.p.z,
+                            a: this.p.a,
+                            h: this.p.h
+                        };
+                    },
+
+                    _draw: function(context, drawCircle) {
+                        this.c.a = this.p.a;
+                        drawCircle(this.p, this.c);
+                    },
+
+                    _moveTowards: function(n) {
+                        const dx = this.p.x - n.x;
+                        const dy = this.p.y - n.y;
+                        const d = Math.sqrt(dx * dx + dy * dy);
+                        const e = this.e * d;
+
+                        if (this.p.h === -1) {
+                            this.p.x = n.x;
+                            this.p.y = n.y;
+                            return true;
+                        }
+
+                        if (d > 1) {
+                            this.p.x -= ((dx / d) * e);
+                            this.p.y -= ((dy / d) * e);
+                        } else {
+                            if (this.p.h > 0) {
+                                this.p.h--;
+                            } else {
+                                return true;
+                            }
+                        }
+                        return false;
+                    },
+
+                    _update: function() {
+                        if (this._moveTowards(this.t)) {
+                            const p = this.q.shift();
+                            if (p) {
+                                this.t.x = p.x || this.p.x;
+                                this.t.y = p.y || this.p.y;
+                                this.t.z = p.z || this.p.z;
+                                this.t.a = p.a || this.p.a;
+                                this.p.h = p.h || 0;
+                            } else {
+                                if (this.s) {
+                                    this.p.x -= Math.sin(Math.random() * 3.142);
+                                    this.p.y -= Math.sin(Math.random() * 3.142);
+                                } else {
+                                    this.move({
+                                        x: this.p.x + (Math.random() * 50) - 25,
+                                        y: this.p.y + (Math.random() * 50) - 25
+                                    });
+                                }
+                            }
+                        }
+
+                        let d = this.p.a - this.t.a;
+                        this.p.a = Math.max(0.1, this.p.a - (d * 0.05));
+                        d = this.p.z - this.t.z;
+                        this.p.z = Math.max(1, this.p.z - (d * 0.05));
+                    },
+
+                    move: function(p, avoidStatic) {
+                        if (!avoidStatic || (avoidStatic && this.distanceTo(p) > 1)) {
+                            this.q.push(p);
+                        }
+                    },
+
+                    distanceTo: function(n) {
+                        const dx = this.p.x - n.x;
+                        const dy = this.p.y - n.y;
+                        return Math.sqrt(dx * dx + dy * dy);
+                    },
+
+                    render: function(context, drawCircle) {
+                        this._update();
+                        this._draw(context, drawCircle);
+                    }
+                };
+            }
+
+            createShapeCanvas() {
+                const shapeCanvas = document.createElement('canvas');
+                const shapeContext = shapeCanvas.getContext('2d');
+                
+                const fit = () => {
+                    shapeCanvas.width = Math.floor(window.innerWidth / this.options.gap) * this.options.gap;
+                    shapeCanvas.height = Math.floor(window.innerHeight / this.options.gap) * this.options.gap;
+                    shapeContext.fillStyle = 'red';
+                    shapeContext.textBaseline = 'middle';
+                    shapeContext.textAlign = 'center';
+                };
+
+                fit();
+                window.addEventListener('resize', fit);
+
+                return { canvas: shapeCanvas, context: shapeContext };
+            }
+
+            processCanvas(shapeCanvas, shapeContext) {
+                const pixels = shapeContext.getImageData(0, 0, shapeCanvas.width, shapeCanvas.height).data;
+                const dots = [];
+                let x = 0, y = 0;
+                let fx = shapeCanvas.width, fy = shapeCanvas.height;
+                let w = 0, h = 0;
+
+                for (let p = 0; p < pixels.length; p += (4 * this.options.gap)) {
+                    if (pixels[p + 3] > 0) {
+                        dots.push({ x: x, y: y });
+                        w = x > w ? x : w;
+                        h = y > h ? y : h;
+                        fx = x < fx ? x : fx;
+                        fy = y < fy ? y : fy;
+                    }
+                    x += this.options.gap;
+                    if (x >= shapeCanvas.width) {
+                        x = 0;
+                        y += this.options.gap;
+                        p += this.options.gap * 4 * shapeCanvas.width;
+                    }
+                }
+
+                return { dots: dots, w: w + fx, h: h + fy };
+            }
+
+            createLetterShape(letter) {
+                const { canvas: shapeCanvas, context: shapeContext } = this.createShapeCanvas();
+                
+                const setFontSize = (size) => {
+                    shapeContext.font = `bold ${size}px ${this.options.fontFamily}`;
+                };
+
+                const isNumber = (n) => {
+                    return !isNaN(parseFloat(n)) && isFinite(n);
+                };
+
+                let s = 0;
+                setFontSize(this.options.fontSize);
+                s = Math.min(
+                    this.options.fontSize,
+                    (shapeCanvas.width / shapeContext.measureText(letter).width) * 0.8 * this.options.fontSize,
+                    (shapeCanvas.height / this.options.fontSize) * (isNumber(letter) ? 1 : 0.45) * this.options.fontSize
+                );
+                setFontSize(s);
+
+                shapeContext.clearRect(0, 0, shapeCanvas.width, shapeCanvas.height);
+                shapeContext.fillText(letter, shapeCanvas.width / 2, shapeCanvas.height / 2);
+
+                return this.processCanvas(shapeCanvas, shapeContext);
+            }
+
+            compensate() {
+                const area = { w: this.canvas.width, h: this.canvas.height };
+                this.cx = area.w / 2 - this.width / 2;
+                this.cy = area.h / 2 - this.height / 2;
+            }
+
+            switchShape(shapeData, fast = false) {
+                const area = { w: this.canvas.width, h: this.canvas.height };
+                this.width = shapeData.w;
+                this.height = shapeData.h;
+                this.compensate();
+
+                // Thêm dots mới nếu cần
+                if (shapeData.dots.length > this.dots.length) {
+                    const size = shapeData.dots.length - this.dots.length;
+                    for (let d = 1; d <= size; d++) {
+                        this.dots.push(this.createDot(area.w / 2, area.h / 2));
+                    }
+                }
+
+                let d = 0;
+                let i = 0;
+                const dotsCopy = [...shapeData.dots];
+
+                while (dotsCopy.length > 0) {
+                    i = Math.floor(Math.random() * dotsCopy.length);
+                    this.dots[d].e = fast ? 0.25 : (this.dots[d].s ? 0.14 : 0.11);
+                    
+                    if (this.dots[d].s) {
+                        this.dots[d].move({
+                            z: Math.random() * this.options.dotSize * 4 + this.options.dotSize * 2,
+                            a: Math.random(),
+                            h: 18
+                        });
+                    } else {
+                        this.dots[d].move({
+                            z: Math.random() * this.options.dotSize * 2 + this.options.dotSize,
+                            h: fast ? 18 : 30
+                        });
+                    }
+
+                    this.dots[d].s = true;
+                    this.dots[d].move({
+                        x: dotsCopy[i].x + this.cx,
+                        y: dotsCopy[i].y + this.cy,
+                        a: 1,
+                        z: this.options.dotSize,
+                        h: 0
+                    });
+
+                    dotsCopy.splice(i, 1);
+                    d++;
+                }
+
+                // Xử lý các dots thừa
+                for (let i = d; i < this.dots.length; i++) {
+                    if (this.dots[i].s) {
+                        this.dots[i].move({
+                            z: Math.random() * this.options.dotSize * 4 + this.options.dotSize * 2,
+                            a: Math.random(),
+                            h: 20
+                        });
+                        this.dots[i].s = false;
+                        this.dots[i].e = 0.04;
+                        this.dots[i].move({
+                            x: Math.random() * area.w,
+                            y: Math.random() * area.h,
+                            a: 0.3,
+                            z: Math.random() * this.options.dotSize * 2,
+                            h: 0
+                        });
+                    }
+                }
+            }
+
+            timedAction(fn, delay, max, reverse) {
+                clearInterval(this.interval);
+                this.currentAction = reverse ? max : 1;
+                fn(this.currentAction);
+                
+                if (!max || (!reverse && this.currentAction < max) || (reverse && this.currentAction > 0)) {
+                    this.interval = setInterval(() => {
+                        this.currentAction = reverse ? this.currentAction - 1 : this.currentAction + 1;
+                        fn(this.currentAction);
+                        if ((!reverse && max && this.currentAction === max) || (reverse && this.currentAction === 0)) {
+                            clearInterval(this.interval);
+                        }
+                    }, delay);
+                }
+            }
+
+            performAction(value) {
+                this.sequence = typeof value === 'object' ? value : this.sequence.concat(value.split('|'));
+                
+                this.timedAction((index) => {
+                    const current = this.sequence.shift();
+                    if (!current) return;
+
+                    const action = current.split(' ')[0];
+                    const actionValue = current.split(' ')[1];
+
+                    switch (action) {
+                        case '#time':
+                            const t = new Date().toLocaleTimeString();
+                            if (this.sequence.length > 0) {
+                                this.switchShape(this.createLetterShape(t));
+                            } else {
+                                this.timedAction(() => {
+                                    const newTime = new Date().toLocaleTimeString();
+                                    if (newTime !== t) {
+                                        this.switchShape(this.createLetterShape(newTime));
+                                    }
+                                }, 1000);
+                            }
+                            break;
+
+                        default:
+                            this.switchShape(this.createLetterShape(current[0] === '#' ? 'HacPai' : current));
+                    }
+                }, 2500, this.sequence.length);
+            }
+
+            // Hàm chính để bắt đầu hiệu ứng
+            animate(text) {
+                this.performAction(text);
+            }
+
+            render() {
+                for (let d = 0; d < this.dots.length; d++) {
+                    this.dots[d].render(this.context, this.drawCircle.bind(this));
+                }
+            }
+        }
+
+        // Khởi tạo text animation
+        let textAnimation = null;
+        
+        // Khởi tạo sau khi DOM load
+        document.addEventListener('DOMContentLoaded', function() {
+            const textCanvas = document.getElementById('textCanvas');
+            textAnimation = new TextAnimation('#textCanvas', {
+                dotColor: { r: 220, g: 38, b: 127, a: 1 }, // Màu hồng đậm
+                fontSize: 400,
+                dotSize: 2,
+                gap: 4
+            });
+            
+            // Chạy animation với text chỉ 1 lượt, sau đó tự động chuyển trang
+            const textSequence = 'Chúc mừng|Ngày Phụ Nữ|Việt Nam|20-10';
+            textAnimation.animate(textSequence);
+            
+            // Tự động chuyển sang trang flower sau khi animation hoàn thành (chỉ 1 lượt)
+            // Tính toán: 4 phần text × 2.5 giây/phần = 10 giây + thêm 1 giây buffer
+            setTimeout(function() {
+                console.log('🎉 Text animation completed! Redirecting to flower page...');
+                
+                // Thêm hiệu ứng fade out trước khi chuyển trang
+                document.body.style.transition = 'opacity 1s ease-out';
+                document.body.style.opacity = '0';
+                
+                // Chuyển trang sau khi fade out
+                setTimeout(function() {
+                    // Đánh dấu rằng đây là auto redirect hợp lệ từ matrix
+                    sessionStorage.setItem('matrixRedirect', 'true');
+                    window.location.href = 'flower.html';
+                }, 1000);
+            }, 11000); // 10s animation + 1s buffer = 11s
+        });
+    </script>
+
+    <!-- Fireworks Effect Script -->
+    <script src="effects/firework.js"></script>
+    <script>
+        // Khởi tạo fireworks effect
+        let fireworksEffect = null;
+        
+        // Đợi DOM load xong
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🎆 Starting fireworks initialization...');
+            
+            // Kiểm tra canvas có tồn tại không
+            const canvas = document.getElementById('fireworks-canvas');
+            if (!canvas) {
+                console.error('❌ Fireworks canvas not found!');
+                return;
+            }
+            
+            console.log('✅ Fireworks canvas found');
+            
+            // Khởi tạo fireworks với cấu hình rõ ràng hơn
+            fireworksEffect = new FireworksEffect();
+            const success = fireworksEffect.init('fireworks-canvas', {
+                maxFireworks: 3, // Ít pháo hoa hơn
+                autoCreateInterval: 1000, // Tạo pháo hoa mỗi 1 giây
+                particleCount: { min: 24, max: 40 }, // Gấp đôi particle để vụ nổ lớn hơn
+                particleSpeed: { min: 1, max: 2.5 }, // Chậm hơn
+                particleSize: { min: 4, max: 8 }, // Thon gọn hơn
+                colors: [
+                    'hsl(320, 90%, 80%)', // Hồng đậm sáng hơn
+                    'hsl(340, 90%, 80%)', // Hồng tím sáng hơn
+                    'hsl(0, 90%, 80%)',   // Đỏ sáng hơn
+                    'hsl(20, 90%, 80%)'   // Cam hồng sáng hơn
+                ]
+            });
+            
+            if (success) {
+                console.log('🎆 Fireworks effect initialized successfully');
+                
+                // Tạo pháo hoa đầu tiên để test - to và sáng hơn
+                setTimeout(() => {
+                    fireworksEffect.createFirework(window.innerWidth / 2, window.innerHeight / 2, {
+                        particleCount: 40,
+                        speed: 2.5,
+                        size: 8
+                    });
+                    console.log('🎆 Test firework created - BIG and BRIGHT');
+                }, 1000);
+                
+                // Tạo thêm pháo hoa test
+                setTimeout(() => {
+                    fireworksEffect.createFirework(window.innerWidth / 4, window.innerHeight / 3);
+                    fireworksEffect.createFirework(window.innerWidth * 3/4, window.innerHeight * 2/3);
+                    console.log('🎆 Additional test fireworks created');
+                }, 2000);
+            } else {
+                console.error('❌ Failed to initialize fireworks effect');
+            }
+        });
+    </script>
+
+</body>
+</html>
